@@ -88,6 +88,7 @@ class ScatteringTokenizer(nn.Module):
         
         # Null embedding for CFG
         self.null = nn.Parameter(torch.randn(1, self.num_tokens, hidden_size) * 0.02)
+        
 
     def forward(self, x, train=False, force_null=False):
         """

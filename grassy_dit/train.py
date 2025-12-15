@@ -72,6 +72,9 @@ class ScatteringGraphDIT(GraphDITMolecularGenerator):
     
     def _initialize_model(self, model_class, checkpoint=None):
         """Override to use ScatteringDenoiser instead of Transformer."""
+        if checkpoint is not None:
+            self._setup_diffusion_params(checkpoint)
+        
         denoiser = ScatteringDenoiser(
             max_n_nodes=self.max_node,
             hidden_size=self.hidden_size,
@@ -81,7 +84,34 @@ class ScatteringGraphDIT(GraphDITMolecularGenerator):
             Edim=self.input_dim_E,
         )
         self.model = ScatteringTransformerAdapter(denoiser).to(self.device)
+        
+        if checkpoint is not None:
+            self.model.load_state_dict(checkpoint["model_state_dict"])
+    
         return self.model
+    
+    @torch.no_grad()
+    def generate(self, scattering, num_nodes=None, batch_size=1):
+        """Generate molecules conditioned on scattering moments.
+        
+        Args:
+            scattering: [440] or [batch_size, 440] scattering moments
+            num_nodes: Optional number of nodes per molecule
+            batch_size: Number of samples (only used if scattering is 1D)
+        
+        Returns:
+            List of SMILES strings
+        """
+        import numpy as np
+        
+        if isinstance(scattering, np.ndarray):
+            scattering = torch.from_numpy(scattering).float()
+        if scattering.dim() == 1:
+            scattering = scattering.unsqueeze(0).expand(batch_size, -1).clone()
+
+
+        print(f"scattering range: {scattering.min():.2f} to {scattering.max():.2f}")
+        return super().generate(labels=scattering, num_nodes=num_nodes, batch_size=len(scattering))
 
 
 if __name__ == "__main__":

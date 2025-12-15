@@ -13,10 +13,10 @@ GRASSY-DiT combines two key ideas:
 1. **GRASSY scattering moments**: A 440-dimensional structural fingerprint computed via learnable graph wavelets
 2. **Graph-DiT**: A discrete diffusion transformer for molecular graph generation
 
-Given a target scattering signature, GRASSY-DiT generates molecules whose structure matches that signature.
+Given a target scattering signature, GRASSY-DiT generates molecules whose structure matches that signature — optionally preserving a scaffold substructure.
 
 ```
-Target Scattering [440-D] → GRASSY-DiT → Molecule (SMILES)
+Target Scattering [440-D] + (Optional Scaffold) → GRASSY-DiT → Molecule (SMILES)
 ```
 
 ---
@@ -56,7 +56,7 @@ grassy_dit/
 ├── __init__.py           # Package exports
 ├── model.py              # ScatteringDenoiser, ScatteringTokenizer, CrossAttention
 ├── train.py              # ScatteringGraphDIT subclass + training CLI
-├── sample.py             # Sampling CLI
+├── sample.py             # Sampling CLI with scaffold support
 └── data/                 # Training data
     ├── molecules.csv         # SMILES strings
     └── scattering_moments.npy # [N, 440] scattering vectors
@@ -145,6 +145,14 @@ python -m grassy_dit.sample \
     --index 42 \
     --num_samples 5 \
     --output generated.txt
+
+# Generate with scaffold constraint (e.g., keep benzene ring)
+python -m grassy_dit.sample \
+    --checkpoint grassy_dit_checkpoint.pt \
+    --scattering target_scattering.npy \
+    --scaffold "c1ccccc1" \
+    --num_samples 5 \
+    --output generated.txt
 ```
 
 **Sampling arguments:**
@@ -156,6 +164,7 @@ python -m grassy_dit.sample \
 | `--index` | 0 | Index of scattering vector (if file has multiple rows) |
 | `--num_samples` | 10 | Number of molecules to generate |
 | `--num_nodes` | None | Number of atoms (None = sample from training distribution) |
+| `--scaffold` | None | Scaffold SMILES to preserve during generation |
 | `--output` | generated.txt | Output file for SMILES |
 
 ---
@@ -206,6 +215,33 @@ pred = pred_uncond + guidance_scale * (pred_cond - pred_uncond)
 
 Higher `guidance_scale` (default 2.0) = stronger adherence to target scattering.
 
+### Scaffold-Constrained Generation
+
+Scaffold constraints allow preserving a substructure during generation:
+
+```
+Position:        0  1  2  3  4  5  6  7  8  9  10 ...
+scaffold_mask:   T  T  T  T  T  T  F  F  F  F  F  ...
+node_mask:       T  T  T  T  T  T  T  T  T  T  T  ...
+                 |--scaffold---|  |--generated--|
+```
+
+How it works:
+1. Convert scaffold SMILES to atom/bond tensors using model's atom/bond decoders
+2. At each reverse diffusion step, after the model predicts denoised atoms/bonds:
+   - Overwrite scaffold positions with clean scaffold values
+   - Let non-scaffold positions denoise normally
+3. Result: Generated atoms "grow around" the fixed scaffold
+
+Example: Generate molecules containing a benzene ring that match target scattering:
+```bash
+python -m grassy_dit.sample \
+    --checkpoint model.pt \
+    --scattering target.npy \
+    --scaffold "c1ccccc1" \
+    --num_samples 10
+```
+
 ---
 
 ## What We Inherit from torch-molecule
@@ -242,6 +278,7 @@ print(f'NaNs: {np.isnan(x).sum()}')  # Should be 0
 2. **Atom types**: ~10 common drug-like atoms
 3. **Molecule size**: Max ~50 atoms (configurable)
 4. **Training data**: Model quality depends heavily on scattering data quality
+5. **Scaffold**: Must be valid SMILES parseable by RDKit
 
 ---
 

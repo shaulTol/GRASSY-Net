@@ -91,27 +91,47 @@ class ScatteringGraphDIT(GraphDITMolecularGenerator):
         return self.model
     
     @torch.no_grad()
-    def generate(self, scattering, num_nodes=None, batch_size=1):
-        """Generate molecules conditioned on scattering moments.
-        
-        Args:
-            scattering: [440] or [batch_size, 440] scattering moments
-            num_nodes: Optional number of nodes per molecule
-            batch_size: Number of samples (only used if scattering is 1D)
-        
-        Returns:
-            List of SMILES strings
-        """
+    def generate(self, scattering, num_nodes=None, batch_size=1,
+             scaffold_X=None, scaffold_E=None, scaffold_node_mask=None):
+        """Generate with optional scaffold constraint."""
         import numpy as np
         
         if isinstance(scattering, np.ndarray):
             scattering = torch.from_numpy(scattering).float()
         if scattering.dim() == 1:
             scattering = scattering.unsqueeze(0).expand(batch_size, -1).clone()
+        if isinstance(num_nodes, int):
+            num_nodes = torch.full((len(scattering),), num_nodes, dtype=torch.long)
+        
+        # No scaffold - use parent directly
+        if scaffold_X is None:
+            return super().generate(labels=scattering, num_nodes=num_nodes, batch_size=len(scattering))
+        
+        # Store scaffold for use in sample_p_zs_given_zt
+        self._scaffold_X = scaffold_X.to(self.device)
+        self._scaffold_E = scaffold_E.to(self.device)
+        self._scaffold_node_mask = scaffold_node_mask.to(self.device)
+        self._scaffold_edge_mask = scaffold_node_mask.unsqueeze(-1) & scaffold_node_mask.unsqueeze(-2)
+        
+        try:
+            return super().generate(labels=scattering, num_nodes=num_nodes, batch_size=len(scattering))
+        finally:
+            # Clean up
+            self._scaffold_X = None
+            self._scaffold_E = None
+            self._scaffold_node_mask = None
+            self._scaffold_edge_mask = None
 
-
-        print(f"scattering range: {scattering.min():.2f} to {scattering.max():.2f}")
-        return super().generate(labels=scattering, num_nodes=num_nodes, batch_size=len(scattering))
+    def sample_p_zs_given_zt(self, s, t, X_t, E_t, properties, node_mask):
+        """Override to inject scaffold after each step."""
+        result = super().sample_p_zs_given_zt(s, t, X_t, E_t, properties, node_mask)
+        
+        # Inject scaffold if set
+        if getattr(self, '_scaffold_X', None) is not None:
+            result.X[self._scaffold_node_mask] = self._scaffold_X[self._scaffold_node_mask]
+            result.E[self._scaffold_edge_mask] = self._scaffold_E[self._scaffold_edge_mask]
+        
+        return result
 
 
 if __name__ == "__main__":

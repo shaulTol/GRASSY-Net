@@ -4,7 +4,7 @@
 
 This is a minimal fork of [GRASSY-Net](https://github.com/KrishnaswamyLab/GRASSY-Net) (Krishnaswamy Lab), focused on cross-attention conditioning for scattering-guided molecular generation using Graph Diffusion Transformers.
 
-The full GRASSY-Net framework combines learnable graph scattering transforms, a variational autoencoder (GRASSY VAE), and a diffusion transformer for conditional molecular generation. This fork contains only the **DiT component with cross-attention conditioning on scattering moments**, which is the focus of the course project.
+This fork contains only the **DiT component with cross-attention conditioning on scattering moments**, which is the focus of the course project.
 
 ## Overview
 
